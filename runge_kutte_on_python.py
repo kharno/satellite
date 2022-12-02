@@ -1,7 +1,7 @@
-from math import pi, sqrt, sin, cos, asin, acos, fmod
+from math import pi, sqrt, sin, cos, asin, acos, atan, fmod
 import matplotlib.pyplot as plt
-from datetime import datetime
-from .constants import GM, wz
+from datetime import datetime, timedelta
+from src.constants import GM, wz
 
 
 class Satellite:
@@ -18,20 +18,15 @@ class Satellite:
         elif keo is not None:
             self.keo = keo
             self.agesk = Satellite.calculate_keo_to_agesk(keo)
-            self.gsk = Satellite.calculate_gsk_to_keo(keo, dt)
+            self.gsk = Satellite.calculate_keo_to_gsk(keo, dt)
 
     @staticmethod
     def calculate_move(coord, iteration_count=8700, inert=False):
         prev_coord = coord
-        x = []
         next_coord = []
         for iteration in range(iteration_count):
             next_coord = Satellite.calculate_move_runge(prev_coord, inert=inert)
             prev_coord = next_coord
-            x.append(prev_coord[5])
-        plt.plot(x)
-        plt.show()
-
         return next_coord
 
     @staticmethod
@@ -226,17 +221,65 @@ class Satellite:
 
         return fmod(s * 2 * pi / 86400, pi * 2)
 
+    @staticmethod
+    def get_subsat_point(coord, dt):
+        from src.constants import a, b
+        s = Satellite.calculate_star_time(dt)
+        longitude = asin(coord[4] / sqrt(coord[3] ** 2 + coord[4] ** 2))
+        if coord[3] > 0 and coord[4] > 0:
+            longitude = longitude
+        elif coord[3] < 0 and coord[4] > 0:
+            longitude = pi - longitude
+        elif coord[3] < 0 and coord[4] < 0:
+            longitude = pi - longitude
+        elif coord[3] > 0 and coord[4] < 0:
+            longitude = 2*pi + longitude
+        print(coord[3], coord[4], longitude)
+
+        # coord = Satellite.calculate_gsk_to_agesk(coord, dt)
+        # ksi = coord[3] * cos(s + longitude) + coord[4] * sin(s + longitude)
+        # eta = coord[5]
+        # latitude = atan(b**2/a**2 * eta/ksi)
+        latitude = asin(coord[5]/sqrt(coord[3]**2 + coord[4]**2 + coord[5]**2))
+
+
+        return latitude * 180/pi, longitude * 180/pi
+    @staticmethod
+    def get_satroute(start_coord, start_dt, end_dt):
+        prev_coord = start_coord
+        satroute_latitude = [Satellite.get_subsat_point(coord=start_coord, dt=start_dt)[0], ]
+        satroute_longitude = [Satellite.get_subsat_point(coord=start_coord, dt=start_dt)[1], ]
+        dt = start_dt
+        while dt < end_dt:
+            next_coord = Satellite.calculate_move_runge(prev_coord, inert=False)
+            prev_coord = next_coord
+            dt = dt + timedelta(seconds=10)
+            satroute_latitude.append(Satellite.get_subsat_point(coord=prev_coord, dt=dt)[0])
+            satroute_longitude.append(Satellite.get_subsat_point(coord=prev_coord, dt=dt)[1])
+
+        return satroute_longitude, satroute_latitude
+
+
+
 
 def main():
     # example
     h = 10
     # coordinates in AGESK for round orbit with altitude H = 500 km and zero inclination
-    # sat = Satellite(keo=[62.7*pi/180, 287*pi/180, 271*pi/180, 0.72, 26000000, 0])
-    # sat = Satellite(agesk=[0, 3454.842, 6787.935, 6871000, 0, 0])
-    sat = Satellite(gsk=[-1284.4554889715778, 2659.907832592989, 6787.935, 6187360.526329692, 2987843.824100776, 0])
-    Satellite.calculate_move(sat.gsk, inert=False)
-    print(sat.keo)
+    sat = Satellite(keo=[63.7*pi/180, 287*pi/180, 271*pi/180, 0.72, 26000000, 0])
+    print(sat.agesk)
     print(sat.gsk)
+    # sat = Satellite(agesk=[0, 3454.842, 6787.935, 6871000, 0, 0])
+    # sat = Satellite(gsk=[-1284.4554889715778, 2659.907832592989, 6787.935, 6187360.526329692, 2987843.824100776, 0])
+    # Satellite.calculate_move(sat.gsk, inert=False)
+    satroute = Satellite.get_satroute(start_coord=sat.gsk,
+                                 start_dt=datetime(2022, 8, 26),
+                                 end_dt=datetime(2022, 8, 28, ))
+    # print(min(satroute[0]))
+    plt.plot(*satroute)
+    plt.show()
+
+
 
 
 if __name__ == "__main__":
